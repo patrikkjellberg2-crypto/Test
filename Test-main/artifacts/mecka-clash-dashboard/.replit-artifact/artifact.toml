@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Mecka Clash Dashboard"
+description = "A responsive Swedish Clash of Clans clan dashboard for clan #2Q0Q82C9R, with live clan, war, warlog, and Capital Raid data from the official API."
+version = "1.0.0"
+id = "artifacts/mecka-clash-dashboard"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22370
+
+[services.development]
+run = "pnpm --filter @workspace/mecka-clash-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mecka-clash-dashboard", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mecka-clash-dashboard/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22370"
+BASE_PATH = "/"

@@ -1,0 +1,36 @@
+name: Unpack Mecka Clash
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "*.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unpack project
+        run: |
+          ZIP=$(find . -maxdepth 1 -name "*.zip" -print -quit)
+          if [ -z "$ZIP" ]; then
+            echo "No project ZIP found."
+            exit 1
+          fi
+          mkdir -p /tmp/unpacked
+          unzip -o "$ZIP" -d /tmp/unpacked
+          cp -a /tmp/unpacked/. .
+          rm -f "$ZIP"
+
+      - name: Commit project files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import Clash IQ project" || echo "Nothing to commit"
+          git push

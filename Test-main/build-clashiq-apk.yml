@@ -1,0 +1,92 @@
+name: Build Clash IQ APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Hosted Clash IQ URL the app loads"
+        default: "https://cocproject420-1.onrender.com"
+        required: true
+      version_name:
+        description: "Version name (e.g. 1.1.0)"
+        default: "1.1.0"
+        required: true
+  push:
+    tags:
+      - "apk-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android-app
+    env:
+      SERVER_URL: ${{ inputs.server_url || 'https://cocproject420-1.onrender.com' }}
+      VERSION_NAME: ${{ inputs.version_name || '1.1.0' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Capacitor (the web app is hosted, no workspace install needed)
+        run: npm install --no-audit --no-fund
+
+      - name: Point the app at the hosted dashboard
+        run: |
+          node -e '
+            const fs=require("fs");
+            const c=JSON.parse(fs.readFileSync("capacitor.config.json","utf8"));
+            c.server.url=process.env.SERVER_URL;
+            fs.writeFileSync("capacitor.config.json",JSON.stringify(c,null,2));
+          '
+
+      - name: Generate Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Apply icons and version
+        run: |
+          cp -r resources/res/. android/app/src/main/res/
+          VERSION_CODE=$(( $(date +%s) / 60 ))
+          python3 - <<PY
+          from pathlib import Path
+          import re
+          p = Path("android/app/build.gradle")
+          s = p.read_text()
+          s = re.sub(r"versionCode \d+", "versionCode $VERSION_CODE", s)
+          s = re.sub(r'versionName "[^"]*"', 'versionName "$VERSION_NAME"', s)
+          p.write_text(s)
+          PY
+          grep -n "versionCode\|versionName" android/app/build.gradle
+
+      - name: Build debug APK (installable, unsigned-by-you)
+        working-directory: android-app/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Clash-IQ-${{ env.VERSION_NAME }}-debug
+          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30

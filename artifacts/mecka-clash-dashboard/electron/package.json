@@ -1,0 +1,15 @@
+{
+  "name": "clash-iq-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "build": "vite --config vite.config.ts",
+    "desktop": "electron ."
+  },
+  "dependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "appId": "com.clashiq.desktop",
+  "productName": "Clash IQ",
+  "directories": { "output": "release" },
+  "files": [
+    "dist/public/**/*",
+    "main.cjs",
+    "package.json"
+  ],
+  "win": {
+    "target": [{ "target": "nsis", "arch": ["x64"] }]
+  }
+}

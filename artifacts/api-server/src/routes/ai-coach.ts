@@ -225,7 +225,7 @@ async function callGeminiModel(model: string, prompt: string) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       systemInstruction: {
-        parts: [{ text: "You are CLASHIQ AI Coach. Accuracy comes first. Use only verified supplied Clash API facts. Be specific, tactical and complete. Never invent missing facts. Follow the requested plain-text section structure exactly. You must finish every requested section before stopping." }],
+        parts: [{ text: "You are CLASHIQ AI Coach. Always answer in English, even if the question is written in another language. Accuracy comes first. Use only verified supplied Clash API facts. Be specific, tactical and complete. Never invent missing facts. Follow the requested plain-text section structure exactly. You must finish every requested section before stopping." }],
       },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {

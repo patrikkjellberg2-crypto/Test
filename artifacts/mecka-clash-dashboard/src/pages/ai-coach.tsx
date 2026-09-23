@@ -348,8 +348,8 @@ export default function AICoachPage() {
                   >
                     <BrainCircuit className="size-5 text-[#5da9ff]" />
                     <span className="flex-1">
-                      <span className="block text-sm font-bold">Min klan</span>
-                      <span className="mt-1 block text-[10px] text-white/40">Styrkor, svagheter och prioriteringar</span>
+                      <span className="block text-sm font-bold">My clan</span>
+                      <span className="mt-1 block text-[10px] text-white/40">Strengths, weaknesses and priorities</span>
                     </span>
                   </button>
 
@@ -364,8 +364,8 @@ export default function AICoachPage() {
                   >
                     <Swords className="size-5 text-red-300" />
                     <span className="flex-1">
-                      <span className="block text-sm font-bold">Motståndaren</span>
-                      <span className="mt-1 block text-[10px] text-white/40">Hot, attacker och måltavlor</span>
+                      <span className="block text-sm font-bold">The opponent</span>
+                      <span className="mt-1 block text-[10px] text-white/40">Threats, attacks and targets</span>
                     </span>
                   </button>
 
@@ -380,8 +380,8 @@ export default function AICoachPage() {
                   >
                     <Sparkles className="size-5 text-[#f4c542]" />
                     <span className="flex-1">
-                      <span className="block text-sm font-bold">Ställ en fråga</span>
-                      <span className="mt-1 block text-[10px] text-white/40">Fråga AI Coach vad du vill</span>
+                      <span className="block text-sm font-bold">Ask a question</span>
+                      <span className="mt-1 block text-[10px] text-white/40">Ask AI Coach anything</span>
                     </span>
                   </button>
                 </div>
@@ -398,7 +398,7 @@ export default function AICoachPage() {
                   }
                   rows={5}
                   className="mt-2 w-full resize-none rounded-xl border border-white/[.08] bg-black/20 p-3 text-sm leading-6 text-white outline-none transition placeholder:text-white/25 focus:border-[#f4c542]/30"
-                  placeholder={mode === 'question' ? 'Skriv din fråga här...' : mode === 'opponent' ? 'Vad vill du veta om motståndaren?' : 'Vad vill du veta om din klan?'}
+                  placeholder={mode === 'question' ? 'Type your question here...' : mode === 'opponent' ? 'What do you want to know about the opponent?' : 'What do you want to know about your clan?'}
                 />
 
                 <button

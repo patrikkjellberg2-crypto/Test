@@ -368,10 +368,10 @@ export default function PlayerPage() {
 
   return (
     <div className="min-h-[100dvh] bg-[#07090d] text-white">
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.10),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.08),transparent_30%)]">
+      <div className="flex min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(245,158,11,0.10),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(37,99,235,0.08),transparent_30%)]">
         <AppSidebar />
 
-        <main className="lg:pl-[260px]">
+        <main className="min-w-0 flex-1">
           {/* Header */}
           <header className="border-b border-white/5 bg-[#07090d]/85 px-5 py-4 backdrop-blur-xl">
             <div className="mx-auto flex max-w-[1400px] items-center justify-between">

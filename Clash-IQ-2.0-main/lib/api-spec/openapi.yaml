@@ -1,0 +1,233 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: clash
+    description: Clash of Clans operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /clash/dashboard:
+    get:
+      operationId: getClashDashboard
+      tags: [clash]
+      summary: Get the clan dashboard data
+      description: Returns the configured clan, members, current war, warlog, and Capital Raid seasons from the official Clash of Clans API.
+      parameters:
+        - name: clanTag
+          in: query
+          required: false
+          description: Optional clan tag to load and make active. If omitted, the persisted active clan is used.
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 16
+            pattern: "^#?[A-Za-z0-9]{3,15}$"
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClashDashboard"
+        "503":
+          description: Clash API is not configured or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /clash/war-planner:
+    get:
+      operationId: getWarPlanner
+      tags: [clash]
+      summary: Get saved war planner assignments
+      description: Returns planner-only assignments for a specific live war key.
+      parameters:
+        - name: warKey
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 255
+      responses:
+        "200":
+          description: Saved planner assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarPlanner"
+        "400":
+          description: Missing or invalid war key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /clash/war-planner/{attackerTag}:
+    put:
+      operationId: upsertWarPlannerAssignment
+      tags: [clash]
+      summary: Save a war planner assignment
+      description: Creates or updates a planner-only assignment for one attacker.
+      parameters:
+        - name: attackerTag
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WarPlannerAssignmentInput"
+      responses:
+        "200":
+          description: Saved assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarPlannerAssignment"
+        "400":
+          description: Invalid planner assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          nullable: true
+      required:
+        - error
+    ClashDashboard:
+      type: object
+      properties:
+        clan:
+          type: object
+          additionalProperties: true
+          nullable: true
+        members:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        currentWar:
+          type: object
+          additionalProperties: true
+          nullable: true
+        warlog:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        capitalRaidSeasons:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        fetchedAt:
+          type: string
+          format: date-time
+        clanTag:
+          type: string
+        apiConfigured:
+          type: boolean
+      required:
+        - clan
+        - members
+        - currentWar
+        - warlog
+        - capitalRaidSeasons
+        - fetchedAt
+        - clanTag
+        - apiConfigured
+    WarPlanner:
+      type: object
+      properties:
+        warKey:
+          type: string
+        assignments:
+          type: array
+          items:
+            $ref: "#/components/schemas/WarPlannerAssignment"
+      required:
+        - warKey
+        - assignments
+    WarPlannerAssignment:
+      type: object
+      properties:
+        warKey:
+          type: string
+        attackerTag:
+          type: string
+        assignedTargetMapPosition:
+          type: ["integer", "null"]
+        locked:
+          type: boolean
+        completed:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - warKey
+        - attackerTag
+        - assignedTargetMapPosition
+        - locked
+        - completed
+        - updatedAt
+    WarPlannerAssignmentInput:
+      type: object
+      properties:
+        warKey:
+          type: string
+          minLength: 1
+          maxLength: 255
+        assignedTargetMapPosition:
+          type: ["integer", "null"]
+          minimum: 1
+        locked:
+          type: boolean
+        completed:
+          type: boolean
+      required:
+        - warKey
+        - assignedTargetMapPosition
+        - locked
+        - completed
+

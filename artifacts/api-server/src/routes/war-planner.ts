@@ -226,7 +226,7 @@ async function callOpenAI(
     }),
   });
 
-  const data: AnyObject = await response.json();
+  const data = (await response.json()) as AnyObject;
 
   if (!response.ok) {
     throw new Error(

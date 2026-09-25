@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   Castle,
   ChevronRight,
+  Hammer,
   LayoutDashboard,
   Menu,
   Settings,
@@ -13,6 +14,7 @@ import {
   X,
   BarChart3,
   Sparkles,
+  Trophy,
 } from "lucide-react";
 
 type AppSidebarProps = {
@@ -30,6 +32,8 @@ const navigation = [
   { label: "Members", href: "/members", icon: Users, section: "COMMAND" },
   { label: "AI Coach", href: "/ai-coach", icon: BrainCircuit, section: "INTELLIGENCE" },
   { label: "Statistics", href: "/statistics", icon: BarChart3, section: "INTELLIGENCE" },
+  { label: "War Archive", href: "/war-archive", icon: Trophy, section: "INTELLIGENCE" },
+  { label: "Village", href: "/village", icon: Hammer, section: "INTELLIGENCE" },
   { label: "Settings", href: "/settings", icon: Settings, section: "INTELLIGENCE" },
 ];
 

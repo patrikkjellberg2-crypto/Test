@@ -9,7 +9,7 @@ export function ClashIQPageBanner({ children }: { children: ReactNode }) {
   // Overview owns its hero. Every other page gets the same banner.
   // Members and Capital Raids render the banner directly inside their main area.
   // Keep the wrapper neutral there so it cannot create a spacer or repaint the banner.
-  if (location === '/' || location === '/members' || location === '/capital-raids') {
+  if (location === '/' || location === '/members' || location === '/capital-raids' || location === '/village' || location === '/war-archive') {
     return <>{children}</>;
   }
 

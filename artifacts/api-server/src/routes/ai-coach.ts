@@ -310,8 +310,11 @@ async function handleCoach(req: Request, res: Response, requireAuth = false) {
       ? req.body.clanTag
       : DEFAULT_CLAN_TAG;
     const tag = normalizeTag(requestedTag);
+    if (!/^#[0-9A-Z]{3,15}$/.test(tag)) {
+      return res.status(400).json({ error: "Enter a valid Clash clan tag." });
+    }
     const mode = req.body?.mode === "opponent" ? "opponent" : "clan";
-    const question = typeof req.body?.question === "string" ? req.body.question : "";
+    const question = typeof req.body?.question === "string" ? req.body.question.slice(0, 1000) : "";
 
     const data = await getClanData(tag);
     const prompt = buildPrompt(data, mode, question);

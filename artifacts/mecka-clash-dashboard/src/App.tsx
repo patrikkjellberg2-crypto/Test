@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ClashIQPageBanner } from '@/components/clashiq-page-banner';
+import { WarArchiver } from '@/components/war-archiver';
 
 import NotFound from '@/pages/not-found';
 const DashboardPage = lazy(() => import('@/pages/dashboard'));
@@ -16,6 +17,8 @@ const CapitalRaidsPage = lazy(() => import('@/pages/capital-raids'));
 const AICoachPage = lazy(() => import('@/pages/ai-coach'));
 const StatisticsPage = lazy(() => import('@/pages/statistics'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
+const VillagePage = lazy(() => import('@/pages/village'));
+const WarArchivePage = lazy(() => import('@/pages/war-archive'));
 
 import {
   Route,
@@ -55,6 +58,8 @@ function Router() {
           <Route path="/ai-coach" component={AICoachPage} />
           <Route path="/statistics" component={StatisticsPage} />
           <Route path="/settings" component={SettingsPage} />
+          <Route path="/village" component={VillagePage} />
+          <Route path="/war-archive" component={WarArchivePage} />
           <Route path="/player/:tag" component={PlayerPage} />
           <Route component={NotFound} />
         </Switch>
@@ -87,6 +92,8 @@ function App() {
         >
           <Router />
         </WouterRouter>
+
+        <WarArchiver />
 
         <Toaster />
       </TooltipProvider>

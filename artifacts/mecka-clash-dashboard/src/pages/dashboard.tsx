@@ -736,30 +736,6 @@ export default function DashboardPage() {
                 <Menu className="size-5" />
               </button>
 
-              <form
-                onSubmit={submit}
-                className="flex max-w-[520px] flex-1"
-              >
-                <div className="flex w-full items-center rounded-xl border border-sky-300/20 bg-white/[.04] px-3">
-                  <Search className="size-4 text-slate-400" />
-
-                  <input
-                    value={input}
-                    onChange={e =>
-                      setInput(e.target.value)
-                    }
-                    placeholder="Search player, clan or tag..."
-                    className="h-10 min-w-0 flex-1 bg-transparent px-2 text-sm outline-none"
-                  />
-
-                  <button
-                    type="submit"
-                    className="p-2 text-slate-300"
-                  >
-                    <ArrowRight className="size-4" />
-                  </button>
-                </div>
-              </form>
 
               <div className="ml-auto flex items-center gap-3">
                 <div className="hidden sm:block">
@@ -840,6 +816,41 @@ export default function DashboardPage() {
                 </div>
               </div>
             </section>
+
+            <form
+              onSubmit={submit}
+              className="w-full"
+            >
+              <div className="flex w-full items-center gap-3 rounded-2xl border border-sky-300/25 bg-white/[.05] px-4 shadow-[0_10px_30px_rgba(0,0,0,.25)] focus-within:border-amber-300/60">
+                <Search className="size-6 shrink-0 text-slate-400" />
+
+                <input
+                  value={input}
+                  onChange={e =>
+                    setInput(e.target.value)
+                  }
+                  placeholder="Enter clan tag, e.g. #2Q0Q82C9R"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  className="h-16 min-w-0 flex-1 bg-transparent text-lg font-semibold tracking-wide outline-none placeholder:font-normal placeholder:text-slate-500 md:text-xl"
+                />
+
+                <button
+                  type="submit"
+                  aria-label="Search clan"
+                  className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground transition hover:brightness-110"
+                >
+                  <ArrowRight className="size-5" />
+                </button>
+              </div>
+
+              {searchError && (
+                <p className="mt-2 px-1 text-sm text-red-300">
+                  {searchError}
+                </p>
+              )}
+            </form>
 
             <section
               className="overflow-hidden rounded-2xl border border-sky-400/20 bg-card"
@@ -1024,12 +1035,6 @@ export default function DashboardPage() {
                 )}
               </div>
             </section>
-
-            {searchError && (
-              <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-xs text-red-200">
-                {searchError}
-              </div>
-            )}
 
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
               <Stat

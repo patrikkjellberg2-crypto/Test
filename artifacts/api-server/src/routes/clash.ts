@@ -8,13 +8,19 @@ import {
   UpsertWarPlannerAssignmentParams,
   UpsertWarPlannerAssignmentResponse,
 } from "@workspace/api-zod";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
   clanSelectionTable,
   db,
-  playerWarHistoryTable,
   warPlannerAssignmentsTable,
 } from "@workspace/db";
+import {
+  getArchivedWar,
+  listArchivedWars,
+  listPlayerWarStats,
+  snapshotCurrentWar,
+  snapshotWarlog,
+} from "../lib/war-archive";
 
 const router: IRouter = Router();
 
@@ -203,404 +209,6 @@ function listItems(
   }
 
   return [];
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Player war history helpers                                                  */
-/* -------------------------------------------------------------------------- */
-
-function makeWarKey(
-  clanTag: string,
-  war: ClashRecord,
-): string {
-  const end =
-    typeof war.endTime === "string" && war.endTime
-      ? war.endTime
-      : typeof war.startTime === "string" && war.startTime
-        ? war.startTime
-        : "unknown";
-  return `${normalizeClanTag(clanTag)}|${end}`;
-}
-
-function extractClanSide(
-  war: ClashRecord,
-  clanTag: string,
-): ClashRecord | null {
-  const clan =
-    war.clan && typeof war.clan === "object"
-      ? (war.clan as ClashRecord)
-      : null;
-  const opponent =
-    war.opponent && typeof war.opponent === "object"
-      ? (war.opponent as ClashRecord)
-      : null;
-
-  const requested = normalizeClanTag(clanTag);
-
-  if (
-    clan &&
-    normalizeClanTag(String(clan.tag ?? "")) === requested
-  ) {
-    return clan;
-  }
-  if (
-    opponent &&
-    normalizeClanTag(String(opponent.tag ?? "")) === requested
-  ) {
-    return opponent;
-  }
-  return clan;
-}
-
-function extractOpponentSide(
-  war: ClashRecord,
-  clanTag: string,
-): ClashRecord | null {
-  const clan =
-    war.clan && typeof war.clan === "object"
-      ? (war.clan as ClashRecord)
-      : null;
-  const opponent =
-    war.opponent && typeof war.opponent === "object"
-      ? (war.opponent as ClashRecord)
-      : null;
-
-  const requested = normalizeClanTag(clanTag);
-  const ourSide = extractClanSide(war, clanTag);
-
-  if (ourSide === clan) return opponent;
-  if (ourSide === opponent) return clan;
-  return opponent;
-}
-
-/**
- * Persist every member's attacks from a full ClanWar object into
- * player_war_history. Safe to call repeatedly — uses ON CONFLICT upsert.
- */
-async function persistWarToPlayerHistory(
-  war: ClashRecord | null | undefined,
-  clanTag: string,
-  log?: { info?: (obj: object, msg: string) => void; warn?: (obj: object, msg: string) => void },
-): Promise<number> {
-  if (!war || typeof war !== "object") return 0;
-
-  const ourSide = extractClanSide(war, clanTag);
-  if (!ourSide) return 0;
-
-  const members = Array.isArray(ourSide.members)
-    ? (ourSide.members as ClashRecord[])
-    : [];
-  if (members.length === 0) return 0;
-
-  const warKey = makeWarKey(clanTag, war);
-  const opponent = extractOpponentSide(war, clanTag);
-  const opponentName =
-    typeof opponent?.name === "string" ? opponent.name : null;
-  const result =
-    typeof war.result === "string"
-      ? war.result
-      : typeof ourSide.result === "string"
-        ? String(ourSide.result)
-        : null;
-  const warEndTime =
-    typeof war.endTime === "string"
-      ? war.endTime
-      : typeof war.startTime === "string"
-        ? war.startTime
-        : null;
-
-  let saved = 0;
-
-  for (const member of members) {
-    const attackerTag = normalizeAttackerTag(
-      String(member.tag ?? ""),
-    );
-    if (!attackerTag || attackerTag === "#") continue;
-
-    const attackerName =
-      typeof member.name === "string" && member.name
-        ? member.name
-        : attackerTag;
-
-    const attacks = Array.isArray(member.attacks)
-      ? member.attacks
-      : [];
-
-    const townhallLevel = Number(
-      member.townhallLevel ?? member.townHallLevel ?? 0,
-    );
-
-    try {
-      await db
-        .insert(playerWarHistoryTable)
-        .values({
-          warKey,
-          attackerTag,
-          attackerName,
-          opponentName,
-          result,
-          warEndTime,
-          townhallLevel:
-            Number.isFinite(townhallLevel) && townhallLevel > 0
-              ? townhallLevel
-              : null,
-          attacks,
-        })
-        .onConflictDoUpdate({
-          target: [
-            playerWarHistoryTable.warKey,
-            playerWarHistoryTable.attackerTag,
-          ],
-          set: {
-            attackerName,
-            opponentName,
-            result,
-            warEndTime,
-            townhallLevel:
-              Number.isFinite(townhallLevel) && townhallLevel > 0
-                ? townhallLevel
-                : null,
-            attacks,
-            capturedAt: new Date(),
-          },
-        });
-      saved += 1;
-    } catch (error) {
-      log?.warn?.(
-        { error, warKey, attackerTag },
-        "Failed to persist player war history row",
-      );
-    }
-  }
-
-  if (saved > 0) {
-    log?.info?.(
-      { warKey, saved, clanTag },
-      "Persisted player war history",
-    );
-  }
-
-  return saved;
-}
-
-type HistoricalWarItem = {
-  endTime: string | null;
-  result: string | null;
-  opponentName: string | null;
-  opponentStars: number | null;
-  clanStars: number | null;
-  attacks: ClashRecord[];
-};
-
-function buildHistoricalWarStats(
-  warItems: HistoricalWarItem[],
-): {
-  wars: number;
-  totalAttacks: number;
-  totalStars: number;
-  averageStarsPerAttack: number;
-  averageDestruction: number;
-  maxDestruction: number;
-  threeStarAttacks: number;
-  oneStarOrLess: number;
-  missedWars: number;
-  recentWars: HistoricalWarItem[];
-} {
-  let totalAttacks = 0;
-  let totalStars = 0;
-  let totalDestruction = 0;
-  let threeStarAttacks = 0;
-  let oneStarOrLess = 0;
-  let maxDestruction = 0;
-  let missedWars = 0;
-
-  for (const war of warItems) {
-    const attacks = Array.isArray(war.attacks) ? war.attacks : [];
-    const stars = attacks.reduce(
-      (sum, attack) => sum + Number(attack.stars ?? 0),
-      0,
-    );
-    const destruction = attacks.reduce(
-      (sum, attack) =>
-        sum + Number(attack.destructionPercentage ?? 0),
-      0,
-    );
-
-    totalAttacks += attacks.length;
-    totalStars += stars;
-    totalDestruction += destruction;
-
-    threeStarAttacks += attacks.filter(
-      (attack) => Number(attack.stars ?? 0) >= 3,
-    ).length;
-    oneStarOrLess += attacks.filter(
-      (attack) => Number(attack.stars ?? 0) <= 1,
-    ).length;
-
-    for (const attack of attacks) {
-      maxDestruction = Math.max(
-        maxDestruction,
-        Number(attack.destructionPercentage ?? 0),
-      );
-    }
-
-    if (attacks.length === 0) {
-      missedWars += 1;
-    }
-  }
-
-  // Sort newest first when endTime is available
-  const sorted = [...warItems].sort((a, b) => {
-    const ta = a.endTime ? Date.parse(a.endTime) : 0;
-    const tb = b.endTime ? Date.parse(b.endTime) : 0;
-    return tb - ta;
-  });
-
-  return {
-    wars: warItems.length,
-    totalAttacks,
-    totalStars,
-    averageStarsPerAttack: totalAttacks
-      ? totalStars / totalAttacks
-      : 0,
-    averageDestruction: totalAttacks
-      ? totalDestruction / totalAttacks
-      : 0,
-    maxDestruction,
-    threeStarAttacks,
-    oneStarOrLess,
-    missedWars,
-    recentWars: sorted.slice(0, 20),
-  };
-}
-
-async function loadHistoricalFromDb(
-  playerTag: string,
-): Promise<HistoricalWarItem[]> {
-  const rows = await db
-    .select()
-    .from(playerWarHistoryTable)
-    .where(eq(playerWarHistoryTable.attackerTag, playerTag))
-    .orderBy(desc(playerWarHistoryTable.capturedAt))
-    .limit(50);
-
-  return rows.map((row) => ({
-    endTime: row.warEndTime ?? null,
-    result: row.result ?? null,
-    opponentName: row.opponentName ?? null,
-    opponentStars: null,
-    clanStars: null,
-    attacks: Array.isArray(row.attacks)
-      ? (row.attacks as ClashRecord[])
-      : [],
-  }));
-}
-
-/**
- * Collect full wars that contain member attack details from ClashKing
- * (previous) and, when available, an ended current war from Supercell.
- */
-async function collectFullWarsForHistory(
-  clanTag: string,
-  log: { warn: (obj: object, message: string) => void },
-): Promise<ClashRecord[]> {
-  const encoded = encodeURIComponent(clanTag);
-  const wars: ClashRecord[] = [];
-
-  const previous = await fetchOptionalClashKingResource(
-    `/war/${encoded}/previous`,
-    null,
-    log,
-  );
-  for (const item of listItems(previous.data)) {
-    wars.push(item);
-  }
-
-  // Official current war — only useful when it has ended and still has members
-  if (process.env.CLASH_API_TOKEN) {
-    const current = await fetchOptionalResource(
-      `/clans/${encoded}/currentwar`,
-      null,
-      log,
-    );
-    const war =
-      current.data && !Array.isArray(current.data)
-        ? (current.data as ClashRecord)
-        : null;
-    if (war) {
-      const state = String(war.state ?? "").toLowerCase();
-      const hasMembers =
-        extractClanSide(war, clanTag) &&
-        Array.isArray(
-          (extractClanSide(war, clanTag) as ClashRecord)
-            .members,
-        ) &&
-        (
-          (extractClanSide(war, clanTag) as ClashRecord)
-            .members as unknown[]
-        ).length > 0;
-      if (
-        hasMembers &&
-        (state === "warended" ||
-          state === "ended" ||
-          Boolean(war.endTime))
-      ) {
-        wars.push(war);
-      }
-    }
-  }
-
-  return wars;
-}
-
-function historicalItemsFromFullWar(
-  war: ClashRecord,
-  clanTag: string,
-  playerTag: string,
-): HistoricalWarItem | null {
-  const ourSide = extractClanSide(war, clanTag);
-  if (!ourSide) return null;
-
-  const members = Array.isArray(ourSide.members)
-    ? (ourSide.members as ClashRecord[])
-    : [];
-  const member = members.find(
-    (m) =>
-      normalizeAttackerTag(String(m.tag ?? "")) === playerTag,
-  );
-  if (!member) return null;
-
-  const attacks = Array.isArray(member.attacks)
-    ? (member.attacks as ClashRecord[])
-    : [];
-  const opponent = extractOpponentSide(war, clanTag);
-
-  return {
-    endTime:
-      typeof war.endTime === "string"
-        ? war.endTime
-        : typeof war.startTime === "string"
-          ? war.startTime
-          : null,
-    result:
-      typeof war.result === "string"
-        ? war.result
-        : typeof ourSide.result === "string"
-          ? String(ourSide.result)
-          : null,
-    opponentName:
-      typeof opponent?.name === "string" ? opponent.name : null,
-    opponentStars:
-      typeof opponent?.stars === "number"
-        ? opponent.stars
-        : Number(opponent?.stars ?? null) || null,
-    clanStars:
-      typeof ourSide.stars === "number"
-        ? ourSide.stars
-        : Number(ourSide.stars ?? null) || null,
-    attacks,
-  };
 }
 
 async function getActiveClanTag(
@@ -1072,40 +680,6 @@ router.get(
       officialCapitalRaidResult.data,
     );
 
-    // Best-effort: persist full wars that include member attacks so player
-    // history pages can show real combat records over time.
-    try {
-      for (const war of listItems(clashKingWarlogResult.data)) {
-        await persistWarToPlayerHistory(war, clanTag, req.log);
-      }
-      if (
-        currentWar &&
-        typeof currentWar === "object" &&
-        Array.isArray(
-          (currentWar.clan as ClashRecord | undefined)?.members,
-        )
-      ) {
-        const state = String(currentWar.state ?? "").toLowerCase();
-        if (
-          state === "warended" ||
-          state === "ended" ||
-          Boolean(currentWar.endTime)
-        ) {
-          await persistWarToPlayerHistory(
-            currentWar as ClashRecord,
-            clanTag,
-            req.log,
-          );
-        }
-      }
-    } catch (persistError) {
-      req.log.warn(
-        { persistError, clanTag },
-        "Player war history persist skipped",
-      );
-    }
-
-
     const clashKingClanRaw =
       clanResult.data &&
       !Array.isArray(clanResult.data)
@@ -1347,8 +921,53 @@ router.get(
         dashboard,
       ),
     );
+
+    // Save this war (and the war log) to the database, without slowing
+    // down or breaking the response that was just sent.
+    void snapshotCurrentWar(clanTag, dashboard.currentWar, req.log);
+    void snapshotWarlog(clanTag, warlog, req.log);
   },
 );
+
+/* -------------------------------------------------------------------------- */
+/* War archive (server-side history)                                         */
+/* -------------------------------------------------------------------------- */
+
+router.get("/clash/war-archive", async (req, res): Promise<void> => {
+  try {
+    const clanTag = await getActiveClanTag(
+      typeof req.query.clanTag === "string" ? req.query.clanTag : undefined,
+    );
+    const limit = Number(req.query.limit);
+
+    const [wars, players] = await Promise.all([
+      listArchivedWars(clanTag, Number.isFinite(limit) ? limit : 60),
+      listPlayerWarStats(clanTag),
+    ]);
+
+    res.json({ clanTag, wars, players });
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to load war archive");
+    res.status(503).json({ error: "Could not load the war archive.", code: "WAR_ARCHIVE_FAILED" });
+  }
+});
+
+router.get("/clash/war-archive/:id", async (req, res): Promise<void> => {
+  try {
+    const clanTag = await getActiveClanTag(
+      typeof req.query.clanTag === "string" ? req.query.clanTag : undefined,
+    );
+    const war = await getArchivedWar(clanTag, req.params.id);
+    if (!war) {
+      res.status(404).json({ error: "War not found.", code: "WAR_NOT_FOUND" });
+      return;
+    }
+    res.json(war);
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to load archived war");
+    res.status(503).json({ error: "Could not load this war.", code: "WAR_ARCHIVE_FAILED" });
+  }
+});
 
 /* -------------------------------------------------------------------------- */
 /* Player                                                                     */
@@ -1388,80 +1007,172 @@ router.get(
         return;
       }
 
-      const clanTag = await getActiveClanTag();
+      const clanTag =
+        await getActiveClanTag();
 
-      // 1) Load any rows we already persisted
-      let warItems = await loadHistoricalFromDb(tag);
+      const warlog =
+        await fetchOptionalResource(
+          `/clans/${encodeURIComponent(
+            clanTag,
+          )}/warlog`,
+          [],
+          req.log,
+        );
 
-      // 2) Pull full wars (with members) from ClashKing + ended current war,
-      //    persist them, then merge into the in-memory list for this response.
-      const fullWars = await collectFullWarsForHistory(
-        clanTag,
-        req.log,
+      const history = listItems(
+        warlog.data,
       );
 
-      for (const war of fullWars) {
-        await persistWarToPlayerHistory(war, clanTag, req.log);
+      const wars: ClashRecord[] = [];
 
-        const item = historicalItemsFromFullWar(
-          war,
-          clanTag,
-          tag,
-        );
-        if (!item) continue;
-
-        // Deduplicate by endTime + opponent when possible
-        const key = `${item.endTime ?? ""}|${item.opponentName ?? ""}`;
-        const exists = warItems.some(
-          (w) =>
-            `${w.endTime ?? ""}|${w.opponentName ?? ""}` === key,
-        );
-        if (!exists) {
-          warItems.push(item);
-        }
-      }
-
-      // 3) Official warlog fallback (usually has no per-player attacks,
-      //    but keep it so we still surface wars the player was in if the
-      //    API ever includes members).
-      const warlog = await fetchOptionalResource(
-        `/clans/${encodeURIComponent(clanTag)}/warlog`,
-        [],
-        req.log,
-      );
-      const history = listItems(warlog.data);
+      let totalAttacks = 0;
+      let totalStars = 0;
+      let totalDestruction = 0;
+      let threeStarAttacks = 0;
+      let oneStarOrLess = 0;
+      let maxDestruction = 0;
+      let missedWars = 0;
 
       for (const war of history) {
-        const item = historicalItemsFromFullWar(
-          war,
-          clanTag,
-          tag,
+        const clan =
+          war &&
+          typeof war === "object"
+            ? (war as ClashRecord).clan
+            : null;
+
+        const members =
+          Array.isArray(
+            (clan as ClashRecord | null)
+              ?.members,
+          )
+            ? ((clan as ClashRecord)
+                .members as ClashRecord[])
+            : [];
+
+        const member =
+          members.find(
+            (m) =>
+              normalizeAttackerTag(
+                String(m.tag ?? ""),
+              ) === tag,
+          );
+
+        if (!member) continue;
+
+        const attacks =
+          Array.isArray(member.attacks)
+            ? (member.attacks as ClashRecord[])
+            : [];
+
+        const stars =
+          attacks.reduce(
+            (sum, attack) =>
+              sum +
+              Number(
+                attack.stars ?? 0,
+              ),
+            0,
+          );
+
+        const destruction =
+          attacks.reduce(
+            (sum, attack) =>
+              sum +
+              Number(
+                attack.destructionPercentage ??
+                  0,
+              ),
+            0,
+          );
+
+        totalAttacks += attacks.length;
+        totalStars += stars;
+        totalDestruction += destruction;
+
+        threeStarAttacks +=
+          attacks.filter(
+            (attack) =>
+              Number(
+                attack.stars ?? 0,
+              ) >= 3,
+          ).length;
+
+        oneStarOrLess +=
+          attacks.filter(
+            (attack) =>
+              Number(
+                attack.stars ?? 0,
+              ) <= 1,
+          ).length;
+
+        maxDestruction = Math.max(
+          maxDestruction,
+          ...attacks.map(
+            (attack) =>
+              Number(
+                attack.destructionPercentage ??
+                  0,
+              ),
+          ),
+          0,
         );
-        if (!item) continue;
 
-        const key = `${item.endTime ?? ""}|${item.opponentName ?? ""}`;
-        const exists = warItems.some(
-          (w) =>
-            `${w.endTime ?? ""}|${w.opponentName ?? ""}` === key,
-        );
-        if (!exists) {
-          warItems.push(item);
+        if (attacks.length === 0) {
+          missedWars += 1;
         }
-      }
 
-      // Re-load DB after persist so response matches stored data
-      if (fullWars.length > 0) {
-        const refreshed = await loadHistoricalFromDb(tag);
-        if (refreshed.length >= warItems.length) {
-          warItems = refreshed;
-        }
+        wars.push({
+          endTime:
+            war.endTime ??
+            war.startTime ??
+            null,
+          result:
+            war.result ?? null,
+          opponentName:
+            (
+              war.opponent as
+                | ClashRecord
+                | undefined
+            )?.name ?? null,
+          opponentStars:
+            (
+              war.opponent as
+                | ClashRecord
+                | undefined
+            )?.stars ?? null,
+          clanStars:
+            (
+              war.clan as
+                | ClashRecord
+                | undefined
+            )?.stars ?? null,
+          attacks,
+        });
       }
-
-      const historicalWarStats = buildHistoricalWarStats(warItems);
 
       res.json({
         ...player,
-        historicalWarStats,
+        historicalWarStats: {
+          wars: wars.length,
+          totalAttacks,
+          totalStars,
+          averageStarsPerAttack:
+            totalAttacks
+              ? totalStars /
+                totalAttacks
+              : 0,
+          averageDestruction:
+            totalAttacks
+              ? totalDestruction /
+                totalAttacks
+              : 0,
+          maxDestruction,
+          threeStarAttacks,
+          oneStarOrLess,
+          missedWars,
+          recentWars:
+            wars.slice(0, 20),
+        },
       });
     } catch (error) {
       req.log.warn(

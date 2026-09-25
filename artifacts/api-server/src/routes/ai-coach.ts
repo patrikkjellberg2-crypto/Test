@@ -238,7 +238,7 @@ async function callGeminiModel(model: string, prompt: string) {
     }),
   });
 
-  const data: Dict = await response.json();
+  const data = (await response.json()) as Dict;
   if (!response.ok) {
     const err: any = new Error(`Gemini ${model} HTTP ${response.status}: ${String(data?.error?.message || data?.error?.status || "Gemini API error")}`);
     err.httpStatus = response.status;

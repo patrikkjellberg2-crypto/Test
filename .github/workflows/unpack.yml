@@ -1,116 +1,33 @@
-name: Clash IQ Test - Extract, Build and Prepare Render
+steps:
+  - name: Checkout
+    uses: actions/checkout@v4
 
-on:
-  workflow_dispatch:
-  push:
-    paths:
-      - "Clash-IQ-Test-Project.zip"
-      - ".github/workflows/deploy-test.yml"
+  - name: Unpack project
+    run: |
+      ZIP=$(find . -maxdepth 1 -name "*.zip" -print -quit)
 
-permissions:
-  contents: write
+      if [ -z "$ZIP" ]; then
+        echo "No project ZIP found."
+        exit 1
+      fi
 
-jobs:
-  extract-build-commit:
-    runs-on: ubuntu-latest
+      mkdir -p .unpacked
+      unzip -o "$ZIP" -d .unpacked
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      cp -a .unpacked/. .
+      rm -rf .unpacked
+      rm -f "$ZIP"
 
-      - name: Extract project
-        shell: bash
-        run: |
-          rm -rf .ci-extracted
-          mkdir .ci-extracted
-          unzip -q "Clash-IQ-Test-Project.zip" -d .ci-extracted
+  - name: Commit project files
+    run: |
+      git config user.name "github-actions[bot]"
+      git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if [ -f ".ci-extracted/package.json" ]; then
-            ROOT=".ci-extracted"
-          else
-            ROOT="$(find .ci-extracted -maxdepth 3 -name package.json -type f -print -quit | xargs -r dirname)"
-          fi
+      git add -A
 
-          if [ -z "$ROOT" ] || [ ! -f "$ROOT/package.json" ]; then
-            echo "No package.json found in ZIP."
-            exit 1
-          fi
-
-          echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
-
-      - name: Overlay persistent war-history recovery from Clash IQ source
-        shell: bash
-        run: |
-          rm -rf .ci-source
-          git clone --depth 1 https://github.com/patrikkjellberg2-crypto/Clash-IQ-2.0.git .ci-source
-          for file in \
-            artifacts/api-server/src/routes/clash.ts \
-            api-server/src/routes/clash.ts \
-            artifacts/api-server/src/lib/war-archive.ts \
-            api-server/src/lib/war-archive.ts \
-            artifacts/mecka-clash-dashboard/src/pages/player.tsx \
-            mecka-clash-dashboard/src/pages/player.tsx \
-            V42_4_WAR_HISTORY_RECOVERY_RELEASE_NOTES.md; do
-            if [ -f ".ci-source/$file" ]; then
-              mkdir -p "$(dirname ".ci-extracted/$file")"
-              cp ".ci-source/$file" ".ci-extracted/$file"
-            fi
-          done
-          rm -rf .ci-source
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install dependencies and build
-        working-directory: ${{ env.PROJECT_ROOT }}
-        shell: bash
-        run: |
-          if [ -f pnpm-lock.yaml ]; then
-            corepack enable
-            pnpm install --frozen-lockfile --allow-build=esbuild --allow-build=@replit/connectors-sdk
-            pnpm run typecheck
-            pnpm run test
-            pnpm run build
-          elif [ -f yarn.lock ]; then
-            corepack enable
-            yarn install --frozen-lockfile
-            yarn build
-          elif [ -f package-lock.json ]; then
-            npm ci
-            npm run build
-          else
-            npm install
-            npm run build
-          fi
-
-      - name: Publish extracted project to repository root
-        shell: bash
-        run: |
-          mkdir -p .ci-publish
-
-          rsync -a --delete             --exclude='.git/'             --exclude='.github/'             --exclude='Clash-IQ-Test-Project.zip'             --exclude='.ci-extracted/'             --exclude='.ci-publish/'             "${{ env.PROJECT_ROOT }}/" .ci-publish/
-
-          rsync -a --delete             --exclude='.git/'             --exclude='.github/'             --exclude='Clash-IQ-Test-Project.zip'             --exclude='.ci-extracted/'             --exclude='.ci-publish/'             .ci-publish/ ./
-
-          rm -rf .ci-extracted .ci-publish
-
-      - name: Commit extracted project
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No extracted project changes to commit."
-            exit 0
-          fi
-
-          git commit -m "chore(test): extract Clash IQ test project"
-          git push
-
-# Trigger fresh TEST extraction run.
+      if git diff --cached --quiet; then
+        echo "Nothing to commit."
+      else
+        git commit -m "Import Mecka Clash project"
+        git push
+      fi

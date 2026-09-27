@@ -72,6 +72,7 @@
     "vaul": "^1.1.2",
     "vite": "catalog:",
     "wouter": "^3.3.5",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "clash-of-clans-data": "0.18.0"
   }
 }

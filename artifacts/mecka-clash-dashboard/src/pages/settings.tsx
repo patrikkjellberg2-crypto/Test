@@ -123,7 +123,7 @@ export default function SettingsPage() {
   return (
     <div className="flex min-h-screen bg-[#07090d] text-white">
       <AppSidebar />
-      <main className="min-w-0 flex-1 !ml-0 !pl-0" style={{ width: "calc(100% - 260px)", maxWidth: "calc(100% - 260px)" }}>
+      <main className="min-w-0 w-full flex-1">
         <div className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8">
           {/* Top bar */}
           <div className="mb-6 flex items-center justify-between">

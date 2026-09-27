@@ -19,6 +19,7 @@ const StatisticsPage = lazy(() => import('@/pages/statistics'));
 const SettingsPage = lazy(() => import('@/pages/settings'));
 const VillagePage = lazy(() => import('@/pages/village'));
 const WarArchivePage = lazy(() => import('@/pages/war-archive'));
+const PlayerHistoryPage = lazy(() => import('@/pages/player-history'));
 
 import {
   Route,
@@ -60,6 +61,7 @@ function Router() {
           <Route path="/settings" component={SettingsPage} />
           <Route path="/village" component={VillagePage} />
           <Route path="/war-archive" component={WarArchivePage} />
+          <Route path="/player-history" component={PlayerHistoryPage} />
           <Route path="/player/:tag" component={PlayerPage} />
           <Route component={NotFound} />
         </Switch>

@@ -33,6 +33,7 @@ const navigation = [
   { label: "AI Coach", href: "/ai-coach", icon: BrainCircuit, section: "INTELLIGENCE" },
   { label: "Statistics", href: "/statistics", icon: BarChart3, section: "INTELLIGENCE" },
   { label: "War Archive", href: "/war-archive", icon: Trophy, section: "INTELLIGENCE" },
+  { label: "Player History", href: "/player-history", icon: Users, section: "INTELLIGENCE" },
   { label: "Village", href: "/village", icon: Hammer, section: "INTELLIGENCE" },
   { label: "Settings", href: "/settings", icon: Settings, section: "INTELLIGENCE" },
 ];

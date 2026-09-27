@@ -386,7 +386,17 @@ export default function WarArchivePage() {
                     <tbody>
                       {board.map(p => (
                         <tr key={p.playerTag} className="border-t border-white/5">
-                          <td className="py-2 pr-3 font-bold">{p.playerName}</td>
+                          <td className="py-2 pr-3 font-bold">
+                            <Link
+                              href={`/player/${encodeURIComponent(p.playerTag)}`}
+                              className="group inline-flex items-center gap-2 text-white hover:text-amber-300"
+                            >
+                              <span>{p.playerName}</span>
+                              <span className="text-[9px] font-black uppercase tracking-wider text-slate-600 group-hover:text-amber-300">
+                                History
+                              </span>
+                            </Link>
+                          </td>
                           <td className="py-2 pr-3">{p.warsCounted}</td>
                           <td className="py-2 pr-3">
                             <span className={p.attacksUsed < p.attacksPossible ? 'text-red-300' : ''}>

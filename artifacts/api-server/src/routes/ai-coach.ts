@@ -5,7 +5,7 @@ const router: IRouter = Router();
 const DEFAULT_CLAN_TAG = "#2Q0Q82C9R";
 const CLASH_API_BASE_URL = process.env.CLASH_API_BASE_URL || "https://cocproxy.royaleapi.dev/v1";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.8-flash";
 const GEMINI_FALLBACK_MODEL = "gemini-3.5-flash-lite";
 const MAX_PROMPT_CHARS = 24000;
 const MAX_OUTPUT_TOKENS = 5000;
@@ -238,7 +238,7 @@ async function callGeminiModel(model: string, prompt: string) {
     }),
   });
 
-  const data = (await response.json()) as Dict;
+  const data = await response.json();
   if (!response.ok) {
     const err: any = new Error(`Gemini ${model} HTTP ${response.status}: ${String(data?.error?.message || data?.error?.status || "Gemini API error")}`);
     err.httpStatus = response.status;
@@ -275,7 +275,7 @@ function isBusyError(error: any) {
 // Tries each model in turn. When Gemini is overloaded (503/429) it waits and
 // retries the same model, then falls through to the next model.
 async function callGemini(prompt: string) {
-  const models = Array.from(new Set([GEMINI_MODEL, "gemini-3.5-flash", GEMINI_FALLBACK_MODEL]));
+  const models = Array.from(new Set([GEMINI_MODEL, "gemini-3.7-flash", "gemini-3.6-flash", GEMINI_FALLBACK_MODEL]));
   const attemptsPerModel = 3;
   let lastError: any = null;
 

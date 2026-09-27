@@ -12,6 +12,9 @@ import {
   Sparkles,
   Star,
   Swords,
+  Minus,
+  TrendingDown,
+  TrendingUp,
   Trophy,
   Users,
   Zap,
@@ -200,6 +203,29 @@ export default function PlayerPage() {
     };
   }, [tag]);
 
+  const [archiveWars, setArchiveWars] = useState<Dict[]>([]);
+  const [archiveLoaded, setArchiveLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/clash/player/${encodeURIComponent(tag)}/war-history?limit=25`)
+      .then(response => (response.ok ? response.json() : { wars: [] }))
+      .then(value => {
+        if (!cancelled) {
+          setArchiveWars(Array.isArray(value?.wars) ? value.wars : []);
+          setArchiveLoaded(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setArchiveLoaded(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tag]);
+
   const d = dashboard as any;
 
   const members = asArray(d?.members);
@@ -268,6 +294,61 @@ export default function PlayerPage() {
   const historicalWars = asArray(
     historical.recentWars,
   );
+
+  const archiveStats = useMemo(() => {
+    if (!archiveWars.length) return null;
+
+    let attacksUsed = 0;
+    let attacksPossible = 0;
+    let stars = 0;
+    let threeStars = 0;
+    let destructionSum = 0;
+    let bestDestruction = 0;
+
+    // attacksPerMember isn't in this payload; assume the common case (2)
+    // unless a war clearly used more attacks than that.
+    for (const w of archiveWars) {
+      const attacks = asArray(w.attacks);
+      attacksUsed += attacks.length;
+      attacksPossible += Math.max(2, attacks.length);
+      for (const a of attacks) {
+        const s = num(a.stars);
+        const d = num(a.destructionPercentage);
+        stars += s;
+        destructionSum += d;
+        if (d > bestDestruction) bestDestruction = d;
+        if (s >= 3) threeStars += 1;
+      }
+    }
+
+    const recentAvgWindow = 5;
+    const withAttacks = archiveWars.filter(w => asArray(w.attacks).length > 0);
+    const avgOf = (list: Dict[]) => {
+      const all = list.flatMap(w => asArray(w.attacks));
+      if (!all.length) return null;
+      return all.reduce((sum, a) => sum + num(a.stars), 0) / all.length;
+    };
+    const recent = avgOf(withAttacks.slice(0, recentAvgWindow));
+    const previous = avgOf(withAttacks.slice(recentAvgWindow, recentAvgWindow * 2));
+    let trend: 'up' | 'down' | 'flat' | null = null;
+    if (recent !== null && previous !== null) {
+      const diff = recent - previous;
+      trend = diff > 0.15 ? 'up' : diff < -0.15 ? 'down' : 'flat';
+    }
+
+    return {
+      wars: archiveWars.length,
+      attacksUsed,
+      attacksPossible,
+      missed: Math.max(0, attacksPossible - attacksUsed),
+      stars,
+      threeStars,
+      avgDestruction: attacksUsed ? destructionSum / attacksUsed : 0,
+      bestDestruction,
+      trend,
+      recentAvgStars: recent,
+    };
+  }, [archiveWars]);
 
   const histAttacks = num(
     historical.totalAttacks,
@@ -612,169 +693,6 @@ export default function PlayerPage() {
               </section>
             )}
 
-            {/* Historical wars */}
-            <section className="rounded-2xl border border-red-400/15 bg-[#11151c]/90 p-5 shadow-xl">
-              <div className="mb-5 flex items-center gap-3">
-                <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-2.5">
-                  <Swords className="h-5 w-5 text-red-300" />
-                </div>
-
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">
-                    Combat history
-                  </p>
-
-                  <h2 className="text-lg font-black">
-                    Historical Wars & Attacks
-                  </h2>
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat
-                  icon={Swords}
-                  label="Historical Wars"
-                  value={num(
-                    historical.wars,
-                  )}
-                  sub="From Persistent War Archive"
-                />
-
-                <Stat
-                  icon={Swords}
-                  label="Attacks"
-                  value={histAttacks}
-                  sub={`Missed wars ${histMissed}`}
-                />
-
-                <Stat
-                  icon={Star}
-                  label="Stars"
-                  value={histStars}
-                  sub={`3★ attacks ${histThreeStars}`}
-                />
-
-                <Stat
-                  icon={Zap}
-                  label="Avg. Destruction"
-                  value={pct(
-                    histAvgDestruction,
-                  )}
-                  sub={`Best ${pct(
-                    num(
-                      historical.maxDestruction,
-                    ),
-                  )}`}
-                />
-              </div>
-
-              {historicalWars.length ? (
-                <div className="mt-5 space-y-2">
-                  {historicalWars
-                    .slice(0, 10)
-                    .map((warItem, index) => {
-                      const warAttacks =
-                        asArray(
-                          warItem.attacks,
-                        );
-
-                      const warStars =
-                        warAttacks.reduce(
-                          (sum, attack) =>
-                            sum +
-                            num(
-                              attack.stars,
-                            ),
-                          0,
-                        );
-
-                      const warDestruction =
-                        warAttacks.length
-                          ? warAttacks.reduce(
-                              (
-                                sum,
-                                attack,
-                              ) =>
-                                sum +
-                                num(
-                                  attack.destructionPercentage,
-                                ),
-                              0,
-                            ) /
-                            warAttacks.length
-                          : 0;
-
-                      const hasThreeStar =
-                        warAttacks.some(
-                          (attack) =>
-                            num(
-                              attack.stars,
-                            ) >= 3,
-                        );
-
-                      return (
-                        <div
-                          key={index}
-                          className="flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between"
-                        >
-                          <div>
-                            <p className="text-sm font-bold text-white">
-                              {str(
-                                warItem.opponentName,
-                                'Opponent',
-                              )}
-                            </p>
-
-                            <p className="mt-1 text-[10px] text-slate-600">
-                              {formatDate(
-                                warItem.endTime,
-                              )}{' '}
-                              ·{' '}
-                              {
-                                warAttacks.length
-                              }{' '}
-                              attacks
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-4">
-                            <div className="text-right">
-                              <p className="font-data text-sm font-black text-white">
-                                {warStars} ★
-                              </p>
-                              <p className="text-[9px] uppercase tracking-wider text-slate-600">
-                                {pct(warDestruction)}
-                              </p>
-                            </div>
-
-                            <span
-                              className={`rounded-lg border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
-                                hasThreeStar
-                                  ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
-                                  : warStars > 0
-                                    ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
-                                    : 'border-white/10 bg-white/[0.03] text-slate-600'
-                              }`}
-                            >
-                              {hasThreeStar
-                                ? '3 STAR'
-                                : warStars > 0
-                                  ? 'ACTIVE'
-                                  : 'NO STARS'}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              ) : (
-                <p className="mt-5 rounded-xl border border-white/5 bg-white/[0.02] p-5 text-sm text-slate-600">
-                  No historical war records are available for this player.
-                </p>
-              )}
-            </section>
-
-
             {/* Troops + Heroes */}
             <section className="grid gap-6 xl:grid-cols-2">
               <article className="rounded-2xl border border-white/10 bg-[#11151c]/90 p-5 shadow-xl">
@@ -945,6 +863,272 @@ export default function PlayerPage() {
               ) : (
                 <p className="rounded-xl border border-white/5 bg-white/[0.02] p-5 text-sm text-slate-600">
                   No spell data available.
+                </p>
+              )}
+            </section>
+
+            {/* Combat history (server-side war archive) */}
+            <section className="rounded-2xl border border-red-400/15 bg-[#11151c]/90 p-5 shadow-xl">
+              <div className="mb-5 flex flex-wrap items-center gap-3">
+                <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-2.5">
+                  <Swords className="h-5 w-5 text-red-300" />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-red-300">
+                    Combat history
+                  </p>
+                  <h2 className="text-lg font-black">
+                    Historical Wars & Attacks
+                  </h2>
+                </div>
+
+                {archiveStats?.trend && (
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider ${
+                      archiveStats.trend === 'up'
+                        ? 'border-emerald-400/30 bg-emerald-400/10 text-emerald-300'
+                        : archiveStats.trend === 'down'
+                          ? 'border-red-400/30 bg-red-400/10 text-red-300'
+                          : 'border-slate-400/30 bg-slate-400/10 text-slate-300'
+                    }`}
+                  >
+                    {archiveStats.trend === 'up' ? (
+                      <TrendingUp className="h-3.5 w-3.5" />
+                    ) : archiveStats.trend === 'down' ? (
+                      <TrendingDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <Minus className="h-3.5 w-3.5" />
+                    )}
+                    {archiveStats.trend === 'up'
+                      ? 'Improving'
+                      : archiveStats.trend === 'down'
+                        ? 'Declining'
+                        : 'Steady'}
+                  </span>
+                )}
+              </div>
+
+              {archiveStats ? (
+                <>
+                  <p className="mb-4 text-xs text-slate-500">
+                    Based on {archiveStats.wars} war
+                    {archiveStats.wars === 1 ? '' : 's'} captured by ClashIQ for
+                    this clan. This grows the longer the clan uses the app.
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Stat
+                      icon={Swords}
+                      label="Wars tracked"
+                      value={archiveStats.wars}
+                      sub="ClashIQ war archive"
+                    />
+
+                    <Stat
+                      icon={Swords}
+                      label="Attacks"
+                      value={archiveStats.attacksUsed}
+                      sub={`Missed ${archiveStats.missed}`}
+                    />
+
+                    <Stat
+                      icon={Star}
+                      label="Stars"
+                      value={archiveStats.stars}
+                      sub={`3★ attacks ${archiveStats.threeStars}`}
+                    />
+
+                    <Stat
+                      icon={Zap}
+                      label="Avg. Destruction"
+                      value={pct(archiveStats.avgDestruction)}
+                      sub={`Best ${pct(archiveStats.bestDestruction)}`}
+                    />
+                  </div>
+
+                  <div className="mt-5 space-y-2">
+                    {archiveWars.slice(0, 10).map((warItem, index) => {
+                      const warAttacks = asArray(warItem.attacks);
+
+                      const warStars = warAttacks.reduce(
+                        (sum, attack) => sum + num(attack.stars),
+                        0,
+                      );
+
+                      const warDestruction = warAttacks.length
+                        ? warAttacks.reduce(
+                            (sum, attack) => sum + num(attack.destructionPercentage),
+                            0,
+                          ) / warAttacks.length
+                        : 0;
+
+                      const hasThreeStar = warAttacks.some(
+                        attack => num(attack.stars) >= 3,
+                      );
+
+                      return (
+                        <div
+                          key={`${str(warItem.warId, String(index))}`}
+                          className="flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-bold text-white">
+                              {str(warItem.opponentName, 'Opponent')}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              {formatDate(warItem.endTime)} ·{' '}
+                              {warAttacks.length} attack
+                              {warAttacks.length === 1 ? '' : 's'}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="font-data text-sm font-black text-white">
+                                {warStars} ★
+                              </p>
+                              <p className="text-[9px] uppercase tracking-wider text-slate-600">
+                                {pct(warDestruction)}
+                              </p>
+                            </div>
+
+                            <span
+                              className={`rounded-lg border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
+                                hasThreeStar
+                                  ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                                  : warStars > 0
+                                    ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                                    : 'border-white/10 bg-white/[0.03] text-slate-600'
+                              }`}
+                            >
+                              {warAttacks.length === 0
+                                ? 'NO ATTACKS'
+                                : hasThreeStar
+                                  ? '3 STAR'
+                                  : warStars > 0
+                                    ? 'ACTIVE'
+                                    : 'NO STARS'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : !archiveLoaded ? (
+                <p className="mt-2 rounded-xl border border-white/5 bg-white/[0.02] p-5 text-sm text-slate-600">
+                  Loading combat history…
+                </p>
+              ) : historicalWars.length ? (
+                <>
+                  <p className="mb-4 text-xs text-slate-500">
+                    From the official clan war log. ClashIQ will build a richer,
+                    ongoing history for this player as the clan uses the app.
+                  </p>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Stat
+                      icon={Swords}
+                      label="Historical Wars"
+                      value={num(historical.wars)}
+                      sub="From Persistent War Archive"
+                    />
+
+                    <Stat
+                      icon={Swords}
+                      label="Attacks"
+                      value={histAttacks}
+                      sub={`Missed wars ${histMissed}`}
+                    />
+
+                    <Stat
+                      icon={Star}
+                      label="Stars"
+                      value={histStars}
+                      sub={`3★ attacks ${histThreeStars}`}
+                    />
+
+                    <Stat
+                      icon={Zap}
+                      label="Avg. Destruction"
+                      value={pct(histAvgDestruction)}
+                      sub={`Best ${pct(num(historical.maxDestruction))}`}
+                    />
+                  </div>
+
+                  <div className="mt-5 space-y-2">
+                    {historicalWars.slice(0, 10).map((warItem, index) => {
+                      const warAttacks = asArray(warItem.attacks);
+
+                      const warStars = warAttacks.reduce(
+                        (sum, attack) => sum + num(attack.stars),
+                        0,
+                      );
+
+                      const warDestruction = warAttacks.length
+                        ? warAttacks.reduce(
+                            (sum, attack) => sum + num(attack.destructionPercentage),
+                            0,
+                          ) / warAttacks.length
+                        : 0;
+
+                      const hasThreeStar = warAttacks.some(
+                        attack => num(attack.stars) >= 3,
+                      );
+
+                      return (
+                        <div
+                          key={index}
+                          className="flex flex-col gap-3 rounded-xl border border-white/5 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div>
+                            <p className="text-sm font-bold text-white">
+                              {str(warItem.opponentName, 'Opponent')}
+                            </p>
+
+                            <p className="mt-1 text-[10px] text-slate-600">
+                              {formatDate(warItem.endTime)} · {warAttacks.length} attacks
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="font-data text-sm font-black text-white">
+                                {warStars} ★
+                              </p>
+                              <p className="text-[9px] uppercase tracking-wider text-slate-600">
+                                {pct(warDestruction)}
+                              </p>
+                            </div>
+
+                            <span
+                              className={`rounded-lg border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${
+                                hasThreeStar
+                                  ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                                  : warStars > 0
+                                    ? 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                                    : 'border-white/10 bg-white/[0.03] text-slate-600'
+                              }`}
+                            >
+                              {hasThreeStar
+                                ? '3 STAR'
+                                : warStars > 0
+                                  ? 'ACTIVE'
+                                  : 'NO STARS'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-5 rounded-xl border border-white/5 bg-white/[0.02] p-5 text-sm text-slate-600">
+                  No historical war records are available for this player yet.
+                  ClashIQ will start building this the next time the clan is
+                  active in the app.
                 </p>
               )}
             </section>

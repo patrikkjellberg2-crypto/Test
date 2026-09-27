@@ -2,10 +2,13 @@
 nixPkgs = ["nodejs_22"]
 
 [phases.install]
-cmds = ["corepack enable && pnpm install --frozen-lockfile"]
+cmds = ["corepack enable && pnpm install"]
 
 [phases.build]
-cmds = ["pnpm build"]
+cmds = [
+  "pnpm --filter @workspace/mecka-clash-dashboard build",
+  "pnpm --filter @workspace/api-server build",
+]
 
 [start]
 cmd = "pnpm start"

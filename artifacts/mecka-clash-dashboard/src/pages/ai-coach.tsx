@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useGetClashDashboard } from '@workspace/api-client-react';
 import { Link } from 'wouter';
 import { AppSidebar } from '@/components/app-sidebar';
+import WarTimer from '@/components/WarTimer';
 import {
   ArrowRight,
   BrainCircuit,
-  Menu,
   RefreshCw,
   Shield,
   Sparkles,
@@ -39,9 +39,6 @@ export default function AICoachPage() {
   const war = d(dashboard?.currentWar);
   const opponent = d(war.opponent);
   const clanTag = s(dashboard?.clanTag, '');
-
-  const [mobileOpen, setMobileOpen] =
-    useState(false);
 
   const [mode, setMode] =
     useState<Mode>('clan');
@@ -194,26 +191,11 @@ export default function AICoachPage() {
         <AppSidebar
           clanName={clanName}
           clanTag={clanTag}
-          mobileOpen={mobileOpen}
-          onClose={() =>
-            setMobileOpen(false)
-          }
         />
 
         <main className="min-w-0 flex-1">
           <header className="sticky top-0 z-20 border-b border-white/[.06] bg-[#030a12]/90 px-4 py-4 backdrop-blur-xl md:px-8">
             <div className="mx-auto flex max-w-[1400px] items-center gap-3">
-              <button
-                type="button"
-                onClick={() =>
-                  setMobileOpen(true)
-                }
-                className="grid size-9 place-items-center rounded-xl border border-white/10 bg-white/[.04] lg:hidden"
-                aria-label="Open navigation"
-              >
-                <Menu className="size-4" />
-              </button>
-
               <div>
                 <p className="text-[8px] font-black uppercase tracking-[.22em] text-[#f4c542]">
                   Elite Mode / Intelligence
@@ -325,6 +307,8 @@ export default function AICoachPage() {
                 </div>
               </div>
             </section>
+
+            <WarTimer currentWar={war} compact />
 
             <section className="grid gap-5 xl:grid-cols-[.8fr_1.2fr]">
               <article className="rounded-2xl border border-white/[.07] bg-[#06111b]/90 p-5 shadow-[0_12px_45px_rgba(0,0,0,.2)]">

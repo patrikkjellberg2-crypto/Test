@@ -1,8 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useGetClashDashboard } from '@workspace/api-client-react';
 import { Link } from 'wouter';
 import { AppSidebar } from '@/components/app-sidebar';
-import WarTimer from '@/components/WarTimer';
 import {
   ArrowLeft,
   BarChart3,
@@ -13,6 +12,7 @@ import {
   Clock3,
   Crown,
   Flag,
+  Menu,
   MapPinned,
   RefreshCw,
   Shield,
@@ -55,6 +55,30 @@ const formatDate = (value: unknown, withTime = false) => {
     ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
   }).format(date);
 };
+function formatCountdown(endTime: unknown) {
+  const end = new Date(str(endTime)).getTime();
+  if (!Number.isFinite(end)) return null;
+  const diff = end - Date.now();
+  if (diff <= 0) return 'Ended';
+  const totalMinutes = Math.floor(diff / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours >= 24) {
+    const days = Math.floor(hours / 24);
+    return `${days}d ${hours % 24}h left`;
+  }
+  return `${hours}h ${minutes}m left`;
+}
+
+function useCountdown(endTime: unknown) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+  return formatCountdown(endTime);
+}
+
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -224,6 +248,7 @@ function StatTile({
 
 export default function WarCenterPage() {
   const { data, isLoading, isError, refetch } = useGetClashDashboard();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const dashboard = data as unknown as DashboardShape | undefined;
   const currentWar = asDict(dashboard?.currentWar);
   const clan = asDict(currentWar.clan);
@@ -351,6 +376,8 @@ export default function WarCenterPage() {
     );
   }, [members, opponentMembers]);
 
+  const countdown = useCountdown(currentWar.endTime);
+
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState onRetry={() => void refetch()} />;
   if (!dashboard?.apiConfigured || !hasWar) return <EmptyWarState />;
@@ -370,12 +397,20 @@ export default function WarCenterPage() {
   return (
     <div className="min-h-[100dvh] bg-background dashboard-grid">
       <div className="flex min-h-[100dvh]">
-        <AppSidebar clanName={label(asDict(dashboard.clan).name, 'Mecka Clash')} clanTag={label(dashboard.clanTag, '#2Q0Q82C9R')} />
+        <AppSidebar clanName={label(asDict(dashboard.clan).name, 'Mecka Clash')} clanTag={label(dashboard.clanTag, '#2Q0Q82C9R')} mobileOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />
 
         <main className="min-w-0 flex-1">
           <header className="border-b border-border/80 bg-background/80 px-5 py-4 backdrop-blur-md md:px-8">
             <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4">
               <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  className="rounded-xl border border-border bg-card p-2 lg:hidden"
+                  aria-label="Open navigation"
+                >
+                  <Menu className="size-4" />
+                </button>
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[.18em] text-primary">
                     Live krig / {label(currentWar.state, 'status')}
@@ -456,11 +491,15 @@ export default function WarCenterPage() {
                     {destruction}% destruction ·{' '}
                     {formatDate(currentWar.endTime, true)}
                   </p>
+                  {countdown && (
+                    <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-sidebar-accent">
+                      <Clock3 className="size-3" />
+                      {countdown}
+                    </p>
+                  )}
                 </div>
               </div>
             </section>
-
-            <WarTimer currentWar={currentWar} />
 
             <section className="grid gap-4 sm:grid-cols-3" aria-label="War status">
               <StatTile

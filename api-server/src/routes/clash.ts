@@ -8,20 +8,17 @@ import {
   UpsertWarPlannerAssignmentParams,
   UpsertWarPlannerAssignmentResponse,
 } from "@workspace/api-zod";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import {
-  capitalRaidArchiveTable,
   clanSelectionTable,
   db,
   warPlannerAssignmentsTable,
 } from "@workspace/db";
-import { fetchClashOfStatsHistory } from "../lib/clashofstats";
 import {
   getArchivedWar,
   getPlayerWarHistory,
   listArchivedWars,
   listPlayerWarStats,
-  listPlayerPerformance,
   snapshotCurrentWar,
   snapshotWarlog,
 } from "../lib/war-archive";
@@ -759,100 +756,9 @@ router.get(
         };
       });
 
-    const liveCapitalRaidSeasons = listItems(
+    const capitalRaidSeasons = listItems(
       officialCapitalRaidResult.data,
     );
-
-    // Persist every season we see so the TEST app builds a durable clan history
-    // instead of only showing the small rolling window returned by Supercell.
-    for (const season of liveCapitalRaidSeasons) {
-      const startTime = String(season.startTime ?? "").trim();
-      const endTime = String(season.endTime ?? "").trim();
-      if (!endTime) continue;
-
-      const leagueRaw =
-        (officialClanResult.data && !Array.isArray(officialClanResult.data) ? officialClanResult.data.capitalLeague : undefined) ??
-        (basicClanResult.data && !Array.isArray(basicClanResult.data) ? basicClanResult.data.capitalLeague : undefined) ??
-        (clanResult.data && !Array.isArray(clanResult.data) ? clanResult.data.capitalLeague : undefined);
-      const leagueName =
-        leagueRaw && typeof leagueRaw === "object"
-          ? String((leagueRaw as ClashRecord).name ?? "")
-          : String(leagueRaw ?? "");
-
-      const seasonClan =
-        season.clan && typeof season.clan === "object"
-          ? season.clan as ClashRecord
-          : null;
-
-      try {
-        await db
-          .insert(capitalRaidArchiveTable)
-          .values({
-            id: `${normalizeClanTag(clanTag)}__${endTime}`,
-            clanTag: normalizeClanTag(clanTag),
-            clanName: String((
-              (officialClanResult.data && !Array.isArray(officialClanResult.data) ? officialClanResult.data.name : undefined) ??
-              (basicClanResult.data && !Array.isArray(basicClanResult.data) ? basicClanResult.data.name : undefined) ??
-              (clanResult.data && !Array.isArray(clanResult.data) ? clanResult.data.name : undefined) ??
-              seasonClan?.name ??
-              ""
-            ) || "") || null,
-            leagueName: leagueName || null,
-            startTime: startTime || null,
-            endTime,
-            state: String(season.state ?? "") || null,
-            capitalTotalLoot: Number(season.capitalTotalLoot ?? 0) || 0,
-            raidsCompleted: Number(season.raidsCompleted ?? 0) || 0,
-            offensiveReward: Number(season.offensiveReward ?? 0) || 0,
-            defensiveReward: Number(season.defensiveReward ?? 0) || 0,
-            members: Array.isArray(season.members) ? season.members : [],
-            raw: season,
-          })
-          .onConflictDoUpdate({
-            target: capitalRaidArchiveTable.id,
-            set: {
-              clanName: String((
-                (officialClanResult.data && !Array.isArray(officialClanResult.data) ? officialClanResult.data.name : undefined) ??
-                (basicClanResult.data && !Array.isArray(basicClanResult.data) ? basicClanResult.data.name : undefined) ??
-                (clanResult.data && !Array.isArray(clanResult.data) ? clanResult.data.name : undefined) ??
-                seasonClan?.name ??
-                ""
-              ) || "") || null,
-              leagueName: leagueName || null,
-              startTime: startTime || null,
-              state: String(season.state ?? "") || null,
-              capitalTotalLoot: Number(season.capitalTotalLoot ?? 0) || 0,
-              raidsCompleted: Number(season.raidsCompleted ?? 0) || 0,
-              offensiveReward: Number(season.offensiveReward ?? 0) || 0,
-              defensiveReward: Number(season.defensiveReward ?? 0) || 0,
-              members: Array.isArray(season.members) ? season.members : [],
-              raw: season,
-              updatedAt: new Date(),
-            },
-          });
-      } catch (error) {
-        req.log.warn({ error, endTime }, "ClashIQ capital raid archive save failed");
-      }
-    }
-
-    const archivedCapitalRaids = await db
-      .select()
-      .from(capitalRaidArchiveTable)
-      .where(eq(capitalRaidArchiveTable.clanTag, normalizeClanTag(clanTag)))
-      .orderBy(desc(capitalRaidArchiveTable.endTime));
-
-    const capitalRaidSeasons = archivedCapitalRaids.map((row) => ({
-      ...(row.raw && typeof row.raw === "object" ? row.raw as ClashRecord : {}),
-      startTime: row.startTime,
-      endTime: row.endTime,
-      state: row.state,
-      capitalTotalLoot: row.capitalTotalLoot,
-      raidsCompleted: row.raidsCompleted,
-      offensiveReward: row.offensiveReward,
-      defensiveReward: row.defensiveReward,
-      members: Array.isArray(row.members) ? row.members : [],
-      archiveSource: "persistent",
-    }));
 
     const clashKingClanRaw =
       clanResult.data &&
@@ -1049,11 +955,7 @@ router.get(
           clan.clanCapitalPoints = officialClan.clanCapitalPoints;
         }
         if (officialClan.capitalLeague !== undefined) {
-          const league = officialClan.capitalLeague;
-          clan.capitalLeague =
-            league && typeof league === "object"
-              ? String((league as ClashRecord).name ?? "—")
-              : league;
+          clan.capitalLeague = officialClan.capitalLeague;
         }
       }
     }
@@ -1118,39 +1020,15 @@ router.get("/clash/war-archive", async (req, res): Promise<void> => {
     );
     const limit = Number(req.query.limit);
 
-    let [wars, players] = await Promise.all([
+    const [wars, players] = await Promise.all([
       listArchivedWars(clanTag, Number.isFinite(limit) ? limit : 60),
       listPlayerWarStats(clanTag),
     ]);
-
-    // A fresh TEST database has no player stats yet. Recover recent completed
-    // wars with full member/attack detail before returning the archive so
-    // "Players tracked" and player history are populated on the first visit.
-    if (players.length === 0) {
-      await recoverHistoricalWars(clanTag, req.log, 15);
-      [wars, players] = await Promise.all([
-        listArchivedWars(clanTag, Number.isFinite(limit) ? limit : 60),
-        listPlayerWarStats(clanTag),
-      ]);
-    }
 
     res.json({ clanTag, wars, players });
   } catch (error) {
     req.log.error({ err: error }, "Failed to load war archive");
     res.status(503).json({ error: "Could not load the war archive.", code: "WAR_ARCHIVE_FAILED" });
-  }
-});
-
-router.get("/clash/war-intelligence", async (req, res): Promise<void> => {
-  try {
-    const clanTag = await getActiveClanTag(
-      typeof req.query.clanTag === "string" ? req.query.clanTag : undefined,
-    );
-    const players = await listPlayerPerformance(clanTag);
-    res.json({ clanTag, players });
-  } catch (error) {
-    req.log.error({ err: error }, "Failed to load war intelligence");
-    res.status(503).json({ error: "Could not load war intelligence.", code: "WAR_INTELLIGENCE_FAILED" });
   }
 });
 
@@ -1175,122 +1053,66 @@ router.get("/clash/war-archive/:id", async (req, res): Promise<void> => {
 /* Player                                                                     */
 /* -------------------------------------------------------------------------- */
 
+router.get("/clash/player/:tag/war-history", async (req, res): Promise<void> => {
+  try {
+    const clanTag = await getActiveClanTag(
+      typeof req.query.clanTag === "string" ? req.query.clanTag : undefined,
+    );
+    const limit = Number(req.query.limit);
+    const history = await getPlayerWarHistory(
+      clanTag,
+      req.params.tag,
+      Number.isFinite(limit) ? limit : 25,
+    );
+    res.json({ clanTag, playerTag: req.params.tag, wars: history });
+  } catch (error) {
+    req.log.error({ err: error }, "Failed to load player war history");
+    res.status(503).json({ error: "Could not load this player's war history.", code: "PLAYER_HISTORY_FAILED" });
+  }
+});
+
 router.get(
   "/clash/player/:tag",
   async (req, res): Promise<void> => {
+    if (!process.env.CLASH_API_TOKEN) {
+      res.status(503).json({
+        error:
+          "Clash API token is not configured.",
+        code: "CLASH_API_NOT_CONFIGURED",
+      });
+      return;
+    }
+
     const tag = normalizeClanTag(
       decodeURIComponent(req.params.tag),
     );
 
     try {
-      const clanTag = await getActiveClanTag();
-      const encodedTag = encodeURIComponent(tag);
+      const encodedTag =
+        encodeURIComponent(tag);
 
-      // The official player endpoint can occasionally hang or return a
-      // transient 404/5xx. Player Intelligence must not become unusable just
-      // because that live source is unavailable: Clash IQ already has the
-      // player's archived war records in PostgreSQL.
-      let player: ClashRecord | null = null;
-
-      if (process.env.CLASH_API_TOKEN) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4_000);
-
-        try {
-          const livePlayer = await fetchClashResource(
-            `/players/${encodedTag}`,
-            controller.signal,
-          );
-
-          if (livePlayer && !Array.isArray(livePlayer)) {
-            player = livePlayer;
-          }
-        } catch (error) {
-          req.log.warn(
-            { error, tag },
-            "Official Clash player endpoint unavailable; using archive fallback",
-          );
-        } finally {
-          clearTimeout(timeout);
-        }
-      }
-
-      // Player history is database-first. Warm the persistent archive only
-      // when needed so a fresh TEST database can still recover history.
-      let archivedWars = await listArchivedWars(clanTag, 60);
-      let archivedPlayer: ClashRecord | null = null;
-
-      const findArchivedPlayer = () => {
-        for (const war of archivedWars) {
-          const members = Array.isArray(war.members)
-            ? (war.members as ClashRecord[])
-            : [];
-
-          const member = members.find(
-            (m) =>
-              normalizeAttackerTag(String(m.tag ?? "")) === tag,
-          );
-
-          if (member) return member;
-        }
-
-        return null;
-      };
-
-      archivedPlayer = findArchivedPlayer();
-
-      // If the individual player endpoint is unavailable, use the live clan
-      // roster as a second live fallback. The roster contains the core player
-      // identity fields and keeps Player Intelligence navigable; the richer
-      // player endpoint is still preferred whenever it succeeds.
-      if (!player && process.env.CLASH_API_TOKEN) {
-        const rosterResult = await fetchOptionalResource(
-          `/clans/${encodeURIComponent(clanTag)}/members`,
-          [],
-          req.log,
+      const player =
+        await fetchClashResource(
+          `/players/${encodedTag}`,
+          new AbortController().signal,
         );
-        const roster = listItems(rosterResult.data);
-        const rosterPlayer = roster.find(
-          (m) => normalizeAttackerTag(String(m.tag ?? "")) === tag,
-        );
-        if (rosterPlayer) {
-          player = {
-            ...rosterPlayer,
-            _clashIqSource: "official-clan-roster",
-          };
-        }
+
+      if (!player || Array.isArray(player)) {
+        res.status(404).json({
+          error: "Player not found.",
+          code: "PLAYER_NOT_FOUND",
+        });
+        return;
       }
 
-      if (!player && !archivedPlayer) {
-        await recoverHistoricalWars(clanTag, req.log, 15);
-        archivedWars = await listArchivedWars(clanTag, 60);
-        archivedPlayer = findArchivedPlayer();
-      }
+      const clanTag =
+        await getActiveClanTag();
 
-      if (!player) {
-        if (!archivedPlayer) {
-          res.status(404).json({
-            error: "Player not found in Clash IQ's live or archived data.",
-            code: "PLAYER_NOT_FOUND",
-          });
-          return;
-        }
-
-        player = {
-          tag,
-          name: archivedPlayer.name ?? tag,
-          townHallLevel: archivedPlayer.townhallLevel ?? null,
-          expLevel: archivedPlayer.expLevel ?? null,
-          role: archivedPlayer.role ?? null,
-          attacks: Array.isArray(archivedPlayer.attacks)
-            ? archivedPlayer.attacks
-            : [],
-          _clashIqSource: "persistent-war-archive",
-        };
-      }
+      // Player history is database-first. Warm the persistent archive before
+      // reading it so a fresh Render instance does not return Historical Wars 0.
+      await recoverHistoricalWars(clanTag, req.log, 15);
 
       const archivedHistory = await getPlayerWarHistory(clanTag, tag, 50);
-      const clashOfStatsHistory = await fetchClashOfStatsHistory(tag);
       if (archivedHistory.length > 0) {
         const allAttacks = archivedHistory.flatMap((war) => war.attacks);
         const totalAttacks = allAttacks.length;
@@ -1320,7 +1142,6 @@ router.get(
               attacks: war.attacks,
             })),
           },
-          clashOfStatsHistory,
         });
         return;
       }
@@ -1488,24 +1309,16 @@ router.get(
           recentWars:
             wars.slice(0, 20),
         },
-        clashOfStatsHistory,
       });
     } catch (error) {
       req.log.warn(
-        {
-          tag,
-          errorMessage: error instanceof Error ? error.message : String(error),
-          errorStatus:
-            typeof error === "object" && error !== null && "status" in error
-              ? (error as { status?: unknown }).status
-              : undefined,
-        },
-        "Player Intelligence request failed",
+        { error, tag },
+        "Clash player resource unavailable",
       );
 
       res.status(503).json({
         error:
-          "Could not load Player Intelligence from live or archived data.",
+          "Could not load the player from Clash of Clans API.",
         code: "PLAYER_FETCH_FAILED",
       });
     }
